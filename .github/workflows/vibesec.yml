@@ -1,0 +1,15 @@
+name: VibeSec Security Scan
+
+on:
+  push:
+    branches: ["*"]
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run VibeSec Scan
+        run: |
+          curl -X POST https://your-railway-url/scan \
+            -H "Content-Type: application/json" \
+            -d '{"repo_full_name": "${{ github.repository }}", "github_token": "${{ secrets.GITHUB_TOKEN }}"}'
