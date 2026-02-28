@@ -14,6 +14,14 @@ def root():
     return {"service": "VibeSec", "docs": "/docs", "scan": "POST /scan"}
 
 
+@app.get("/scan")
+def scan_get():
+    raise HTTPException(
+        405,
+        "Use POST /scan with JSON: repo_full_name, github_token. GET is not allowed.",
+    )
+
+
 class ScanRequest(BaseModel):
     repo_full_name: str
     github_token: str
@@ -38,8 +46,13 @@ def scan(request: ScanRequest):
     raw.extend(secrets.scan(files))
     raw.extend(env_exposure.scan(files))
     raw.extend(dependencies.scan(files))
-    prioritized = prioritize.run(raw)
-    report_content = report.generate(prioritized, request.repo_full_name)
+    prioritize_result = prioritize.run(raw)
+    prioritized = prioritize_result["findings"]
+    report_content = report.generate(
+        prioritized,
+        request.repo_full_name,
+        developer_summary=prioritize_result.get("developer_summary"),
+    )
     try:
         github_client.commit_file(
             request.repo_full_name,

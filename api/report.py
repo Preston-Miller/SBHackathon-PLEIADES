@@ -17,7 +17,11 @@ def _severity(f: dict) -> str:
     return "CRITICAL" if f.get("scanner") in ("secrets", "env") else "HIGH"
 
 
-def generate(prioritized_findings: list[dict], repo_name: str) -> str:
+def generate(
+    prioritized_findings: list[dict],
+    repo_name: str,
+    developer_summary: str | None = None,
+) -> str:
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     count = len(prioritized_findings)
     lines = [
@@ -32,6 +36,11 @@ def generate(prioritized_findings: list[dict], repo_name: str) -> str:
         "After fixing all issues run the verification step for each.",
         "",
     ]
+    if developer_summary and developer_summary.strip():
+        lines.append("## Developer Summary")
+        lines.append("")
+        lines.append(developer_summary.strip())
+        lines.append("")
     if count == 0:
         lines.append("Scan passed; no issues found.")
         return "\n".join(lines)
