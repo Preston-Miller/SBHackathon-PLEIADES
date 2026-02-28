@@ -1,5 +1,21 @@
 from datetime import datetime, timezone
 
+_EXT_TYPES = {
+    "py": "Python", "js": "JavaScript", "ts": "TypeScript",
+    "jsx": "JavaScript (React)", "tsx": "TypeScript (React)",
+    "json": "JSON", "yaml": "YAML", "yml": "YAML",
+    "env": "Environment file", "sh": "Shell script", "bash": "Shell script",
+    "rb": "Ruby", "go": "Go", "java": "Java", "php": "PHP",
+    "rs": "Rust", "tf": "Terraform", "toml": "TOML", "txt": "Text",
+    "html": "HTML", "css": "CSS", "sql": "SQL", "swift": "Swift",
+    "kt": "Kotlin", "dart": "Dart", "cs": "C#", "cpp": "C++", "c": "C",
+}
+
+
+def _file_type(path: str) -> str:
+    ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+    return _EXT_TYPES.get(ext, ext.upper() if ext else "Unknown")
+
 
 def _title(f: dict) -> str:
     if f.get("scanner") == "secrets":
@@ -42,6 +58,7 @@ def generate(prioritized_findings: list[dict], repo_name: str) -> str:
         lines.append("")
         if f.get("path"):
             lines.append(f"**File:** {f['path']}")
+            lines.append(f"**Type:** {_file_type(f['path'])}")
         if f.get("line_no"):
             lines.append(f"**Line:** {f['line_no']}")
         if f.get("evidence"):
