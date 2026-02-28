@@ -37,9 +37,55 @@ JSON schema for the remediation_plan:
 }
 Rules: Valid JSON only. No trailing commas. No comments. Maximum 5 findings. finding_id is the 0-based index of the finding in the raw findings array."""
 
+_MAPPING_PATH = os.path.join(os.path.dirname(__file__), "owasp_mapping.json")
+
+
+def _load_owasp_mapping() -> dict:
+    try:
+        with open(_MAPPING_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+_OWASP_MAPPING = _load_owasp_mapping()
+
+
+def _mapping_entry(finding: dict) -> dict:
+    scanner = finding.get("scanner", "")
+    issue = finding.get("issue", "")
+    pattern_name = finding.get("pattern_name", "")
+    by_scanner = _OWASP_MAPPING.get("by_scanner", {})
+    scanner_map = by_scanner.get(scanner, {}) if isinstance(by_scanner, dict) else {}
+    by_issue = scanner_map.get("by_issue", {}) if isinstance(scanner_map, dict) else {}
+    by_pattern = scanner_map.get("by_pattern_name", {}) if isinstance(scanner_map, dict) else {}
+    if issue and isinstance(by_issue, dict) and isinstance(by_issue.get(issue), dict):
+        return by_issue[issue]
+    if pattern_name and isinstance(by_pattern, dict) and isinstance(by_pattern.get(pattern_name), dict):
+        return by_pattern[pattern_name]
+    if isinstance(scanner_map, dict) and isinstance(scanner_map.get("default"), dict):
+        return scanner_map["default"]
+    default_map = _OWASP_MAPPING.get("default", {})
+    return default_map if isinstance(default_map, dict) else {}
+
+
+def _owasp_fields(finding: dict) -> dict:
+    entry = _mapping_entry(finding)
+    refs = [r for r in (entry.get("owasp_refs") or []) if isinstance(r, str) and r.strip()]
+    requirements = [r for r in (entry.get("standard_fix_requirements") or []) if isinstance(r, str) and r.strip()]
+    return {
+        "owasp_category": entry.get("owasp_category", "General Secure Coding"),
+        "owasp_refs": refs,
+        "standard_fix_requirements": requirements,
+        "owasp_mapping_version": _OWASP_MAPPING.get("mapping_version", "unknown"),
+        "owasp_mapping_last_reviewed": _OWASP_MAPPING.get("last_reviewed", "unknown"),
+    }
+
 
 def _default_enrich(f: dict, i: int) -> dict:
     out = dict(f)
+    out.update(_owasp_fields(f))
     out["order"] = i
     out["risk_explanation"] = "Fix this issue to reduce security risk."
     out["fix_steps"] = ["Address the finding as described in the evidence."]
@@ -83,6 +129,7 @@ def _map_plan_to_finding(raw: dict, plan: dict) -> dict:
         risk = "Fix this issue to reduce security risk."
     return {
         **raw,
+        **_owasp_fields(raw),
         "order": plan.get("finding_id", 0),
         "risk_explanation": risk,
         "fix_steps": steps,

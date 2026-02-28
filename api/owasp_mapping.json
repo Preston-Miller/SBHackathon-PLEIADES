@@ -1,0 +1,91 @@
+{
+  "mapping_version": "2026.02.28",
+  "last_reviewed": "2026-02-28",
+  "default": {
+    "owasp_category": "General Secure Coding",
+    "owasp_refs": [
+      "https://cheatsheetseries.owasp.org/"
+    ],
+    "standard_fix_requirements": [
+      "Apply least privilege and remove unsafe defaults.",
+      "Validate all untrusted input and encode output for its context.",
+      "Add a verification step so the fix is enforced in CI."
+    ]
+  },
+  "by_scanner": {
+    "secrets": {
+      "default": {
+        "owasp_category": "Secrets Management",
+        "owasp_refs": [
+          "https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html"
+        ],
+        "standard_fix_requirements": [
+          "Remove hardcoded secrets from source control and rotate exposed credentials.",
+          "Load secrets from a managed secret store or environment variables at runtime.",
+          "Add automated secret scanning in CI and block new leaked credentials."
+        ]
+      }
+    },
+    "env": {
+      "default": {
+        "owasp_category": "Secrets in Configuration",
+        "owasp_refs": [
+          "https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html"
+        ],
+        "standard_fix_requirements": [
+          "Keep .env out of version control and commit only sanitized templates.",
+          "Replace real values in example files with placeholders.",
+          "Rotate any credentials that were committed."
+        ]
+      },
+      "by_issue": {
+        "dotenv_not_gitignored": {
+          "owasp_category": "Secrets in Configuration",
+          "owasp_refs": [
+            "https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html"
+          ],
+          "standard_fix_requirements": [
+            "Add .env patterns to .gitignore and remove tracked sensitive files.",
+            "Purge sensitive values from repository history if previously committed.",
+            "Rotate credentials after cleanup."
+          ]
+        },
+        "dotenv_has_real_values": {
+          "owasp_category": "Secrets in Configuration",
+          "owasp_refs": [
+            "https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html"
+          ],
+          "standard_fix_requirements": [
+            "Replace real .env credentials with runtime-injected secrets.",
+            "Store secret material outside source control.",
+            "Rotate exposed keys before redeploying."
+          ]
+        },
+        "dotenv_example_has_credentials": {
+          "owasp_category": "Secrets in Configuration",
+          "owasp_refs": [
+            "https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html"
+          ],
+          "standard_fix_requirements": [
+            "Replace real values in .env.example with non-sensitive placeholders.",
+            "Document required keys without including credential material.",
+            "Rotate any leaked credentials and validate they are no longer accepted."
+          ]
+        }
+      }
+    },
+    "dependencies": {
+      "default": {
+        "owasp_category": "Vulnerable Dependencies",
+        "owasp_refs": [
+          "https://cheatsheetseries.owasp.org/cheatsheets/Vulnerable_Dependency_Management_Cheat_Sheet.html"
+        ],
+        "standard_fix_requirements": [
+          "Upgrade to a non-vulnerable package version or remove the dependency.",
+          "Pin dependencies and keep lockfiles under version control.",
+          "Add dependency vulnerability checks in CI and enforce failing builds on high severity findings."
+        ]
+      }
+    }
+  }
+}

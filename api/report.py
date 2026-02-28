@@ -80,6 +80,21 @@ def generate(
             lines.append(f"**Detail:** {f['detail']}")
         lines.append(f"**Risk:** {f.get('risk_explanation', 'Security issue.')}")
         lines.append("")
+        owasp_category = f.get("owasp_category")
+        if owasp_category:
+            lines.append(f"**OWASP Category:** {owasp_category}")
+        owasp_refs = f.get("owasp_refs") or []
+        if owasp_refs:
+            lines.append("**OWASP References:**")
+            for ref in owasp_refs:
+                lines.append(f"- {ref}")
+        standard_reqs = f.get("standard_fix_requirements") or []
+        if standard_reqs:
+            lines.append("**Standard Fix Requirements (OWASP):**")
+            for j, req in enumerate(standard_reqs, 1):
+                lines.append(f"{j}. {req}")
+        if owasp_category or owasp_refs or standard_reqs:
+            lines.append("")
         lines.append("**Fix Steps:**")
         for j, step in enumerate(f.get("fix_steps") or [], 1):
             lines.append(f"{j}. {step}")
