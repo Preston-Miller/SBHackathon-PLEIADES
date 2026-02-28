@@ -112,6 +112,5 @@ def commit_file(repo_full_name: str, token: str, filename: str, content: str) ->
             headers=headers,
             json=payload,
         )
-        if r.status_code == 404:
-            raise ValueError("Repository has no commits. Push at least one commit to the repo before installing VibeSec.")
-        r.raise_for_status()
+        if not r.is_success:
+            raise ValueError(f"GitHub {r.status_code}: {r.text}")
