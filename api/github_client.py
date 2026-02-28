@@ -102,11 +102,16 @@ def commit_file(repo_full_name: str, token: str, filename: str, content: str) ->
     with httpx.Client(timeout=30.0) as client:
         scope_check = client.get(f"{GITHUB_API}/user", headers=headers)
         actual_scopes = scope_check.headers.get("X-OAuth-Scopes", "none")
+        repo_info = client.get(f"{GITHUB_API}/repos/{owner}/{repo}", headers=headers)
+        if not repo_info.is_success:
+            raise ValueError(f"Cannot access repo {owner}/{repo}: {repo_info.status_code} (scopes: {actual_scopes})")
+        default_branch = repo_info.json().get("default_branch") or "main"
         existing = client.get(
             f"{GITHUB_API}/repos/{owner}/{repo}/contents/{filename}",
             headers=headers,
+            params={"ref": default_branch},
         )
-        payload: dict = {"message": "VibeSec: security report", "content": encoded}
+        payload: dict = {"message": "VibeSec: security report", "content": encoded, "branch": default_branch}
         if existing.status_code == 200:
             payload["sha"] = existing.json()["sha"]
         r = client.put(
@@ -115,4 +120,4 @@ def commit_file(repo_full_name: str, token: str, filename: str, content: str) ->
             json=payload,
         )
         if not r.is_success:
-            raise ValueError(f"GitHub {r.status_code}: {r.text} (token scopes: {actual_scopes})")
+            raise ValueError(f"GitHub PUT {r.status_code}: {r.text} | branch={default_branch} existing={existing.status_code} scopes={actual_scopes}")
