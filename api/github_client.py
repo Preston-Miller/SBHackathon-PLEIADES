@@ -106,6 +106,16 @@ def commit_file(repo_full_name: str, token: str, filename: str, content: str) ->
         if not repo_info.is_success:
             raise ValueError(f"Cannot access repo {owner}/{repo}: {repo_info.status_code} (scopes: {actual_scopes})")
         default_branch = repo_info.json().get("default_branch") or "main"
+        # Detect empty repo — Contents API cannot write to a branch with no commits
+        ref_check = client.get(
+            f"{GITHUB_API}/repos/{owner}/{repo}/git/ref/heads/{default_branch}",
+            headers=headers,
+        )
+        if ref_check.status_code == 404:
+            raise ValueError(
+                f"{owner}/{repo} has no commits yet. "
+                "Push an initial commit (e.g. initialize with a README) before installing VibeSec."
+            )
         existing = client.get(
             f"{GITHUB_API}/repos/{owner}/{repo}/contents/{filename}",
             headers=headers,
@@ -120,4 +130,4 @@ def commit_file(repo_full_name: str, token: str, filename: str, content: str) ->
             json=payload,
         )
         if not r.is_success:
-            raise ValueError(f"GitHub PUT {r.status_code}: {r.text} | branch={default_branch} existing={existing.status_code} scopes={actual_scopes}")
+            raise ValueError(f"GitHub {r.status_code}: {r.text}")
