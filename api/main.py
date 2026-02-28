@@ -9,6 +9,11 @@ from api.scanners import secrets, env_exposure, dependencies
 app = FastAPI(title="VibeSec")
 
 
+@app.get("/")
+def root():
+    return {"service": "VibeSec", "docs": "/docs", "scan": "POST /scan"}
+
+
 class ScanRequest(BaseModel):
     repo_full_name: str
     github_token: str
