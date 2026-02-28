@@ -37,7 +37,7 @@ def fetch_repo_files(repo_full_name: str, token: str) -> list[dict]:
         )
         tree_r.raise_for_status()
         tree = tree_r.json().get("tree", [])
-    blobs = [t for t in tree if t.get("type") == "blob" and not _skip_path(t.get("path", ""))]
+    blobs = [t for t in tree if t.get("type") == "blob" and not _skip_path(t.get("path", "")) and t.get("size", 0) < 100000][:50]
     out = []
     with httpx.Client(timeout=60.0) as client:
         for b in blobs:
