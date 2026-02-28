@@ -100,6 +100,8 @@ def commit_file(repo_full_name: str, token: str, filename: str, content: str) ->
     headers = {**HEADERS, "Authorization": f"token {token}"}
     encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
     with httpx.Client(timeout=30.0) as client:
+        scope_check = client.get(f"{GITHUB_API}/user", headers=headers)
+        actual_scopes = scope_check.headers.get("X-OAuth-Scopes", "none")
         existing = client.get(
             f"{GITHUB_API}/repos/{owner}/{repo}/contents/{filename}",
             headers=headers,
@@ -113,4 +115,4 @@ def commit_file(repo_full_name: str, token: str, filename: str, content: str) ->
             json=payload,
         )
         if not r.is_success:
-            raise ValueError(f"GitHub {r.status_code}: {r.text}")
+            raise ValueError(f"GitHub {r.status_code}: {r.text} (token scopes: {actual_scopes})")
