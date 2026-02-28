@@ -98,34 +98,32 @@ def fetch_repo_files(repo_full_name: str, token: str) -> list[dict]:
 def commit_file(repo_full_name: str, token: str, filename: str, content: str) -> None:
     owner, repo = _parse_repo(repo_full_name)
     headers = {**HEADERS, "Authorization": f"token {token}"}
+
+    def _gh(r: httpx.Response, label: str) -> None:
+        if not r.is_success:
+            raise ValueError(f"{label} failed ({r.status_code}): {r.text[:400]}")
+
     with httpx.Client(timeout=30.0) as client:
-        # Get default branch
         repo_r = client.get(f"{GITHUB_API}/repos/{owner}/{repo}", headers=headers)
-        repo_r.raise_for_status()
+        _gh(repo_r, "GET repo")
         default_branch = repo_r.json()["default_branch"]
 
-        # Get current HEAD commit SHA
         ref_r = client.get(
             f"{GITHUB_API}/repos/{owner}/{repo}/git/ref/heads/{default_branch}",
             headers=headers,
         )
         if ref_r.status_code == 404:
-            raise ValueError(
-                f"{owner}/{repo} has no commits yet. "
-                "Push an initial commit before installing VibeSec."
-            )
-        ref_r.raise_for_status()
+            raise ValueError(f"{owner}/{repo} has no commits yet. Push an initial commit before installing VibeSec.")
+        _gh(ref_r, "GET ref")
         head_sha = ref_r.json()["object"]["sha"]
 
-        # Get base tree SHA from HEAD commit
         commit_r = client.get(
             f"{GITHUB_API}/repos/{owner}/{repo}/git/commits/{head_sha}",
             headers=headers,
         )
-        commit_r.raise_for_status()
+        _gh(commit_r, f"GET commit")
         base_tree = commit_r.json()["tree"]["sha"]
 
-        # Create new tree — only include the new/changed file; GitHub inherits the rest from base_tree
         tree_r = client.post(
             f"{GITHUB_API}/repos/{owner}/{repo}/git/trees",
             headers=headers,
@@ -134,23 +132,20 @@ def commit_file(repo_full_name: str, token: str, filename: str, content: str) ->
                 "tree": [{"path": filename, "mode": "100644", "type": "blob", "content": content}],
             },
         )
-        tree_r.raise_for_status()
+        _gh(tree_r, f"POST trees (base={base_tree[:7]})")
         new_tree_sha = tree_r.json()["sha"]
 
-        # Create commit
         new_commit_r = client.post(
             f"{GITHUB_API}/repos/{owner}/{repo}/git/commits",
             headers=headers,
             json={"message": "VibeSec: security report", "tree": new_tree_sha, "parents": [head_sha]},
         )
-        new_commit_r.raise_for_status()
+        _gh(new_commit_r, "POST commit")
         new_commit_sha = new_commit_r.json()["sha"]
 
-        # Advance branch ref
         patch_r = client.patch(
             f"{GITHUB_API}/repos/{owner}/{repo}/git/refs/heads/{default_branch}",
             headers=headers,
             json={"sha": new_commit_sha},
         )
-        if not patch_r.is_success:
-            raise ValueError(f"GitHub {patch_r.status_code}: {patch_r.text}")
+        _gh(patch_r, "PATCH ref")

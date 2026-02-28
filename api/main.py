@@ -145,7 +145,7 @@ def auth_login():
     client_id = os.environ.get("GITHUB_CLIENT_ID", "")
     if not client_id:
         raise HTTPException(500, "GITHUB_CLIENT_ID not configured")
-    url = f"https://github.com/login/oauth/authorize?client_id={client_id}&scope=repo"
+    url = f"https://github.com/login/oauth/authorize?client_id={client_id}&scope=repo%20workflow"
     return RedirectResponse(url)
 
 
@@ -181,7 +181,13 @@ def install(req: InstallRequest):
             WORKFLOW_YML,
         )
     except Exception as e:
-        raise HTTPException(502, f"Install failed: {e}")
+        msg = str(e)
+        if "git/trees" in msg and "404" in msg:
+            msg = (
+                "missing GitHub OAuth scope for workflow writes. "
+                "Reconnect GitHub and approve both repo and workflow scopes."
+            )
+        raise HTTPException(502, f"Install failed: {msg}")
     return {"status": "ok", "repo": req.repo_full_name}
 
 
