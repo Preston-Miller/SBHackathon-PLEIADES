@@ -51,7 +51,7 @@ def _parse_repo(repo_full_name: str) -> tuple[str, str]:
 
 def _skip_path(path: str) -> bool:
     p = path.lower()
-    return "node_modules" in p or p.startswith(".git/") or p == ".git"
+    return "node_modules" in p or p.startswith(".git/") or p == ".git" or p == "security_report.md"
 
 
 def fetch_repo_files(repo_full_name: str, token: str) -> list[dict]:
