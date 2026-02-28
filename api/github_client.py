@@ -98,36 +98,59 @@ def fetch_repo_files(repo_full_name: str, token: str) -> list[dict]:
 def commit_file(repo_full_name: str, token: str, filename: str, content: str) -> None:
     owner, repo = _parse_repo(repo_full_name)
     headers = {**HEADERS, "Authorization": f"token {token}"}
-    encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
     with httpx.Client(timeout=30.0) as client:
-        scope_check = client.get(f"{GITHUB_API}/user", headers=headers)
-        actual_scopes = scope_check.headers.get("X-OAuth-Scopes", "none")
-        repo_info = client.get(f"{GITHUB_API}/repos/{owner}/{repo}", headers=headers)
-        if not repo_info.is_success:
-            raise ValueError(f"Cannot access repo {owner}/{repo}: {repo_info.status_code} (scopes: {actual_scopes})")
-        default_branch = repo_info.json().get("default_branch") or "main"
-        # Detect empty repo — Contents API cannot write to a branch with no commits
-        ref_check = client.get(
+        # Get default branch
+        repo_r = client.get(f"{GITHUB_API}/repos/{owner}/{repo}", headers=headers)
+        repo_r.raise_for_status()
+        default_branch = repo_r.json()["default_branch"]
+
+        # Get current HEAD commit SHA
+        ref_r = client.get(
             f"{GITHUB_API}/repos/{owner}/{repo}/git/ref/heads/{default_branch}",
             headers=headers,
         )
-        if ref_check.status_code == 404:
+        if ref_r.status_code == 404:
             raise ValueError(
                 f"{owner}/{repo} has no commits yet. "
-                "Push an initial commit (e.g. initialize with a README) before installing VibeSec."
+                "Push an initial commit before installing VibeSec."
             )
-        existing = client.get(
-            f"{GITHUB_API}/repos/{owner}/{repo}/contents/{filename}",
+        ref_r.raise_for_status()
+        head_sha = ref_r.json()["object"]["sha"]
+
+        # Get base tree SHA from HEAD commit
+        commit_r = client.get(
+            f"{GITHUB_API}/repos/{owner}/{repo}/git/commits/{head_sha}",
             headers=headers,
-            params={"ref": default_branch},
         )
-        payload: dict = {"message": "VibeSec: security report", "content": encoded, "branch": default_branch}
-        if existing.status_code == 200:
-            payload["sha"] = existing.json()["sha"]
-        r = client.put(
-            f"{GITHUB_API}/repos/{owner}/{repo}/contents/{filename}",
+        commit_r.raise_for_status()
+        base_tree = commit_r.json()["tree"]["sha"]
+
+        # Create new tree — only include the new/changed file; GitHub inherits the rest from base_tree
+        tree_r = client.post(
+            f"{GITHUB_API}/repos/{owner}/{repo}/git/trees",
             headers=headers,
-            json=payload,
+            json={
+                "base_tree": base_tree,
+                "tree": [{"path": filename, "mode": "100644", "type": "blob", "content": content}],
+            },
         )
-        if not r.is_success:
-            raise ValueError(f"GitHub {r.status_code}: {r.text}")
+        tree_r.raise_for_status()
+        new_tree_sha = tree_r.json()["sha"]
+
+        # Create commit
+        new_commit_r = client.post(
+            f"{GITHUB_API}/repos/{owner}/{repo}/git/commits",
+            headers=headers,
+            json={"message": "VibeSec: security report", "tree": new_tree_sha, "parents": [head_sha]},
+        )
+        new_commit_r.raise_for_status()
+        new_commit_sha = new_commit_r.json()["sha"]
+
+        # Advance branch ref
+        patch_r = client.patch(
+            f"{GITHUB_API}/repos/{owner}/{repo}/git/refs/heads/{default_branch}",
+            headers=headers,
+            json={"sha": new_commit_sha},
+        )
+        if not patch_r.is_success:
+            raise ValueError(f"GitHub {patch_r.status_code}: {patch_r.text}")
