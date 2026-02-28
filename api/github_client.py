@@ -5,6 +5,43 @@ GITHUB_API = "https://api.github.com"
 HEADERS = {"Accept": "application/vnd.github.v3+json"}
 
 
+def exchange_code_for_token(code: str, client_id: str, client_secret: str) -> str:
+    r = httpx.post(
+        "https://github.com/login/oauth/access_token",
+        json={"client_id": client_id, "client_secret": client_secret, "code": code},
+        headers={"Accept": "application/json"},
+        timeout=15.0,
+    )
+    r.raise_for_status()
+    token = r.json().get("access_token", "")
+    if not token:
+        raise ValueError("GitHub OAuth failed: " + r.json().get("error_description", "no token returned"))
+    return token
+
+
+def list_user_repos(token: str) -> list[str]:
+    repos = []
+    with httpx.Client(timeout=15.0) as client:
+        page = 1
+        while len(repos) < 200:
+            r = client.get(
+                f"{GITHUB_API}/user/repos",
+                headers={**HEADERS, "Authorization": f"token {token}"},
+                params={"sort": "updated", "per_page": 100, "page": page},
+            )
+            r.raise_for_status()
+            batch = r.json()
+            if not batch:
+                break
+            for repo in batch:
+                if repo.get("permissions", {}).get("push"):
+                    repos.append(repo["full_name"])
+            if len(batch) < 100:
+                break
+            page += 1
+    return repos
+
+
 def _parse_repo(repo_full_name: str) -> tuple[str, str]:
     parts = repo_full_name.split("/", 1)
     if len(parts) != 2:
