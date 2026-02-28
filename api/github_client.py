@@ -121,17 +121,13 @@ def commit_file(repo_full_name: str, token: str, filename: str, content: str) ->
         )
         blob_r.raise_for_status()
         blob_sha = blob_r.json()["sha"]
-        tree_r = client.get(
-            f"{GITHUB_API}/repos/{owner}/{repo}/git/trees/{base_tree_sha}",
-            headers=headers,
-        )
-        tree_r.raise_for_status()
-        entries = [e for e in tree_r.json().get("tree", []) if e.get("path") != filename]
-        entries.append({"path": filename, "mode": "100644", "type": "blob", "sha": blob_sha})
         new_tree_r = client.post(
             f"{GITHUB_API}/repos/{owner}/{repo}/git/trees",
             headers=headers,
-            json={"base_tree": base_tree_sha, "tree": entries},
+            json={
+                "base_tree": base_tree_sha,
+                "tree": [{"path": filename, "mode": "100644", "type": "blob", "sha": blob_sha}],
+            },
         )
         new_tree_r.raise_for_status()
         new_tree_sha = new_tree_r.json()["sha"]
