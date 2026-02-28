@@ -34,7 +34,7 @@ def list_user_repos(token: str) -> list[str]:
             if not batch:
                 break
             for repo in batch:
-                if repo.get("permissions", {}).get("push") and repo.get("size", 0) > 0:
+                if repo.get("permissions", {}).get("push"):
                     repos.append(repo["full_name"])
             if len(batch) < 100:
                 break
