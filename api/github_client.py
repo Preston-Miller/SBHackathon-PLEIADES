@@ -98,52 +98,18 @@ def fetch_repo_files(repo_full_name: str, token: str) -> list[dict]:
 def commit_file(repo_full_name: str, token: str, filename: str, content: str) -> None:
     owner, repo = _parse_repo(repo_full_name)
     headers = {**HEADERS, "Authorization": f"token {token}"}
+    encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
     with httpx.Client(timeout=30.0) as client:
-        r = client.get(f"{GITHUB_API}/repos/{owner}/{repo}", headers=headers)
+        existing = client.get(
+            f"{GITHUB_API}/repos/{owner}/{repo}/contents/{filename}",
+            headers=headers,
+        )
+        payload: dict = {"message": "VibeSec: security report", "content": encoded}
+        if existing.status_code == 200:
+            payload["sha"] = existing.json()["sha"]
+        r = client.put(
+            f"{GITHUB_API}/repos/{owner}/{repo}/contents/{filename}",
+            headers=headers,
+            json=payload,
+        )
         r.raise_for_status()
-        default_branch = r.json()["default_branch"]
-        ref_r = client.get(
-            f"{GITHUB_API}/repos/{owner}/{repo}/git/ref/heads/{default_branch}",
-            headers=headers,
-        )
-        ref_r.raise_for_status()
-        commit_sha = ref_r.json()["object"]["sha"]
-        commit_r = client.get(
-            f"{GITHUB_API}/repos/{owner}/{repo}/git/commits/{commit_sha}",
-            headers=headers,
-        )
-        commit_r.raise_for_status()
-        base_tree_sha = commit_r.json()["tree"]["sha"]
-        blob_r = client.post(
-            f"{GITHUB_API}/repos/{owner}/{repo}/git/blobs",
-            headers=headers,
-            json={"content": base64.b64encode(content.encode("utf-8")).decode("ascii"), "encoding": "base64"},
-        )
-        blob_r.raise_for_status()
-        blob_sha = blob_r.json()["sha"]
-        new_tree_r = client.post(
-            f"{GITHUB_API}/repos/{owner}/{repo}/git/trees",
-            headers=headers,
-            json={
-                "base_tree": base_tree_sha,
-                "tree": [{"path": filename, "mode": "100644", "type": "blob", "sha": blob_sha}],
-            },
-        )
-        new_tree_r.raise_for_status()
-        new_tree_sha = new_tree_r.json()["sha"]
-        new_commit_r = client.post(
-            f"{GITHUB_API}/repos/{owner}/{repo}/git/commits",
-            headers=headers,
-            json={
-                "message": "VibeSec: security report",
-                "tree": new_tree_sha,
-                "parents": [commit_sha],
-            },
-        )
-        new_commit_r.raise_for_status()
-        new_commit_sha = new_commit_r.json()["sha"]
-        client.patch(
-            f"{GITHUB_API}/repos/{owner}/{repo}/git/refs/heads/{default_branch}",
-            headers=headers,
-            json={"sha": new_commit_sha},
-        ).raise_for_status()
