@@ -5,6 +5,43 @@ GITHUB_API = "https://api.github.com"
 HEADERS = {"Accept": "application/vnd.github.v3+json"}
 
 
+def exchange_code_for_token(code: str, client_id: str, client_secret: str) -> str:
+    r = httpx.post(
+        "https://github.com/login/oauth/access_token",
+        json={"client_id": client_id, "client_secret": client_secret, "code": code},
+        headers={"Accept": "application/json"},
+        timeout=15.0,
+    )
+    r.raise_for_status()
+    token = r.json().get("access_token", "")
+    if not token:
+        raise ValueError("GitHub OAuth failed: " + r.json().get("error_description", "no token returned"))
+    return token
+
+
+def list_user_repos(token: str) -> list[str]:
+    repos = []
+    with httpx.Client(timeout=15.0) as client:
+        page = 1
+        while len(repos) < 200:
+            r = client.get(
+                f"{GITHUB_API}/user/repos",
+                headers={**HEADERS, "Authorization": f"token {token}"},
+                params={"sort": "updated", "per_page": 100, "page": page},
+            )
+            r.raise_for_status()
+            batch = r.json()
+            if not batch:
+                break
+            for repo in batch:
+                if repo.get("permissions", {}).get("push"):
+                    repos.append(repo["full_name"])
+            if len(batch) < 100:
+                break
+            page += 1
+    return repos
+
+
 def _parse_repo(repo_full_name: str) -> tuple[str, str]:
     parts = repo_full_name.split("/", 1)
     if len(parts) != 2:
@@ -14,7 +51,7 @@ def _parse_repo(repo_full_name: str) -> tuple[str, str]:
 
 def _skip_path(path: str) -> bool:
     p = path.lower()
-    return "node_modules" in p or p.startswith(".git/") or p == ".git"
+    return "node_modules" in p or p.startswith(".git/") or p == ".git" or p == "security_report.md"
 
 
 def fetch_repo_files(repo_full_name: str, token: str) -> list[dict]:
@@ -61,56 +98,54 @@ def fetch_repo_files(repo_full_name: str, token: str) -> list[dict]:
 def commit_file(repo_full_name: str, token: str, filename: str, content: str) -> None:
     owner, repo = _parse_repo(repo_full_name)
     headers = {**HEADERS, "Authorization": f"token {token}"}
+
+    def _gh(r: httpx.Response, label: str) -> None:
+        if not r.is_success:
+            raise ValueError(f"{label} failed ({r.status_code}): {r.text[:400]}")
+
     with httpx.Client(timeout=30.0) as client:
-        r = client.get(f"{GITHUB_API}/repos/{owner}/{repo}", headers=headers)
-        r.raise_for_status()
-        default_branch = r.json()["default_branch"]
+        repo_r = client.get(f"{GITHUB_API}/repos/{owner}/{repo}", headers=headers)
+        _gh(repo_r, "GET repo")
+        default_branch = repo_r.json()["default_branch"]
+
         ref_r = client.get(
             f"{GITHUB_API}/repos/{owner}/{repo}/git/ref/heads/{default_branch}",
             headers=headers,
         )
-        ref_r.raise_for_status()
-        commit_sha = ref_r.json()["object"]["sha"]
+        if ref_r.status_code == 404:
+            raise ValueError(f"{owner}/{repo} has no commits yet. Push an initial commit before installing VibeSec.")
+        _gh(ref_r, "GET ref")
+        head_sha = ref_r.json()["object"]["sha"]
+
         commit_r = client.get(
-            f"{GITHUB_API}/repos/{owner}/{repo}/git/commits/{commit_sha}",
+            f"{GITHUB_API}/repos/{owner}/{repo}/git/commits/{head_sha}",
             headers=headers,
         )
-        commit_r.raise_for_status()
-        base_tree_sha = commit_r.json()["tree"]["sha"]
-        blob_r = client.post(
-            f"{GITHUB_API}/repos/{owner}/{repo}/git/blobs",
-            headers=headers,
-            json={"content": base64.b64encode(content.encode("utf-8")).decode("ascii"), "encoding": "base64"},
-        )
-        blob_r.raise_for_status()
-        blob_sha = blob_r.json()["sha"]
-        tree_r = client.get(
-            f"{GITHUB_API}/repos/{owner}/{repo}/git/trees/{base_tree_sha}",
-            headers=headers,
-        )
-        tree_r.raise_for_status()
-        entries = [e for e in tree_r.json().get("tree", []) if e.get("path") != filename]
-        entries.append({"path": filename, "mode": "100644", "type": "blob", "sha": blob_sha})
-        new_tree_r = client.post(
+        _gh(commit_r, f"GET commit")
+        base_tree = commit_r.json()["tree"]["sha"]
+
+        tree_r = client.post(
             f"{GITHUB_API}/repos/{owner}/{repo}/git/trees",
             headers=headers,
-            json={"base_tree": base_tree_sha, "tree": entries},
+            json={
+                "base_tree": base_tree,
+                "tree": [{"path": filename, "mode": "100644", "type": "blob", "content": content}],
+            },
         )
-        new_tree_r.raise_for_status()
-        new_tree_sha = new_tree_r.json()["sha"]
+        _gh(tree_r, f"POST trees (base={base_tree[:7]})")
+        new_tree_sha = tree_r.json()["sha"]
+
         new_commit_r = client.post(
             f"{GITHUB_API}/repos/{owner}/{repo}/git/commits",
             headers=headers,
-            json={
-                "message": "VibeSec: security report",
-                "tree": new_tree_sha,
-                "parents": [commit_sha],
-            },
+            json={"message": "VibeSec: security report", "tree": new_tree_sha, "parents": [head_sha]},
         )
-        new_commit_r.raise_for_status()
+        _gh(new_commit_r, "POST commit")
         new_commit_sha = new_commit_r.json()["sha"]
-        client.patch(
+
+        patch_r = client.patch(
             f"{GITHUB_API}/repos/{owner}/{repo}/git/refs/heads/{default_branch}",
             headers=headers,
             json={"sha": new_commit_sha},
-        ).raise_for_status()
+        )
+        _gh(patch_r, "PATCH ref")
