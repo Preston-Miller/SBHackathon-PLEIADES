@@ -69,7 +69,7 @@ def scan(files: list[dict]) -> list[dict]:
     req_file = next((f for f in files if f.get("path", "").endswith("requirements.txt")), None)
     pkg_file = next((f for f in files if f.get("path", "").endswith("package.json")), None)
     if req_file:
-        for pkg, ver in _parse_requirements(req_file["content"]):
+        for pkg, ver in _parse_requirements(req_file["content"])[:20]:
             for v in _query_osv(pkg, ver, "PyPI"):
                 findings.append({
                     "scanner": "dependencies",
@@ -80,7 +80,7 @@ def scan(files: list[dict]) -> list[dict]:
                     "summary": v["summary"],
                 })
     if pkg_file:
-        for pkg, ver in _parse_package_json(pkg_file["content"]):
+        for pkg, ver in _parse_package_json(pkg_file["content"])[:20]:
             for v in _query_osv(pkg, ver, "npm"):
                 findings.append({
                     "scanner": "dependencies",
