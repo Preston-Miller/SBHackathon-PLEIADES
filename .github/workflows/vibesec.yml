@@ -10,6 +10,6 @@ jobs:
     steps:
       - name: Run VibeSec Scan
         run: |
-          curl -X POST https://your-railway-url/scan \
+          curl -X POST https://github.com/Preston-Miller/SBHackathon-PLEIADES.git \
             -H "Content-Type: application/json" \
             -d '{"repo_full_name": "${{ github.repository }}", "github_token": "${{ secrets.GITHUB_TOKEN }}"}'
