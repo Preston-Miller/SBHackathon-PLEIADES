@@ -48,6 +48,29 @@ def generate(
         f"Issues Found: {count}",
         "",
     ]
+    if analysis_meta:
+        lines.append("## Triage Engine")
+        lines.append("")
+        lines.append(f"- Path: {analysis_meta.get('path', 'unknown')}")
+        lines.append(f"- Reason: {analysis_meta.get('reason', 'unknown')}")
+        if analysis_meta.get("reason_detail"):
+            lines.append(f"- Reason Detail: {analysis_meta.get('reason_detail')}")
+        if analysis_meta.get("model"):
+            lines.append(f"- Model: {analysis_meta.get('model')}")
+        if analysis_meta.get("raw_findings") is not None:
+            lines.append(f"- Raw Findings: {analysis_meta.get('raw_findings')}")
+        if analysis_meta.get("raw_plan_items") is not None:
+            lines.append(f"- Plan Items: {analysis_meta.get('raw_plan_items')}")
+        if analysis_meta.get("mapped_findings") is not None:
+            lines.append(f"- Mapped Findings: {analysis_meta.get('mapped_findings')}")
+        if analysis_meta.get("has_developer_summary") is not None:
+            lines.append(f"- Developer Summary Present: {analysis_meta.get('has_developer_summary')}")
+        lines.append("")
+    if developer_summary and developer_summary.strip():
+        lines.append("## Developer Summary")
+        lines.append("")
+        lines.append(developer_summary.strip())
+        lines.append("")
     if count == 0:
         lines.append("Scan passed; no issues found.")
         return "\n".join(lines)
