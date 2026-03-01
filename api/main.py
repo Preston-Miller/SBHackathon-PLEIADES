@@ -229,6 +229,7 @@ def scan(request: ScanRequest):
         prioritized,
         request.repo_full_name,
         developer_summary=prioritize_result.get("developer_summary"),
+        analysis_meta=prioritize_result.get("analysis_meta"),
     )
     try:
         github_client.commit_file(

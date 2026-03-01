@@ -95,7 +95,7 @@ def _default_enrich(f: dict, i: int) -> dict:
     return out
 
 
-def _fallback(raw_findings: list[dict]) -> dict:
+def _fallback(raw_findings: list[dict], reason: str, model: str | None = None) -> dict:
     order = {"secrets": 0, "env": 1, "dependencies": 2}
     sorted_f = sorted(
         raw_findings,
@@ -105,6 +105,13 @@ def _fallback(raw_findings: list[dict]) -> dict:
     return {
         "findings": [_default_enrich(f, i) for i, f in enumerate(top5)],
         "developer_summary": None,
+        "analysis_meta": {
+            "path": "fallback",
+            "reason": reason,
+            "model": model,
+            "raw_findings": len(raw_findings),
+            "mapped_findings": len(top5),
+        },
     }
 
 
@@ -149,11 +156,21 @@ def _map_plan_to_finding(raw: dict, plan: dict) -> dict:
 
 def run(raw_findings: list[dict]) -> dict:
     if not raw_findings:
-        return {"findings": [], "developer_summary": None}
+        return {
+            "findings": [],
+            "developer_summary": None,
+            "analysis_meta": {
+                "path": "no_findings",
+                "reason": "no_raw_findings",
+                "model": None,
+                "raw_findings": 0,
+                "mapped_findings": 0,
+            },
+        }
     key = os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         logger.warning("prioritize: ANTHROPIC_API_KEY is missing; using fallback")
-        return _fallback(raw_findings)
+        return _fallback(raw_findings, reason="missing_api_key", model=None)
     model = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-haiku-20241022")
     payload = json.dumps(raw_findings, indent=2)
     user_msg = f"Raw findings (finding_id = 0-based index):\n{payload}\n\nReturn Section 1 (Markdown developer summary), then Section 2 (single ```json code block with remediation_plan only, max 5 items)."
@@ -168,16 +185,16 @@ def run(raw_findings: list[dict]) -> dict:
         text = msg.content[0].text if msg.content else ""
     except Exception as e:
         logger.exception("prioritize: Anthropic request failed for model=%s: %s", model, e)
-        return _fallback(raw_findings)
+        return _fallback(raw_findings, reason="anthropic_request_failed", model=model)
     data = _extract_json_block(text)
     if not data or "remediation_plan" not in data:
         preview = text[:600].replace("\n", "\\n")
         logger.warning("prioritize: unable to parse remediation_plan JSON; response preview=%s", preview)
-        return _fallback(raw_findings)
+        return _fallback(raw_findings, reason="parse_failed_or_missing_remediation_plan", model=model)
     plan_list = data["remediation_plan"]
     if not isinstance(plan_list, list) or len(plan_list) == 0:
         logger.warning("prioritize: remediation_plan missing/empty after parse")
-        return _fallback(raw_findings)
+        return _fallback(raw_findings, reason="empty_remediation_plan", model=model)
     summary = None
     if "```" in text:
         summary = text.split("```")[0].strip()
@@ -202,5 +219,17 @@ def run(raw_findings: list[dict]) -> dict:
     out.sort(key=lambda x: x.get("order", 999))
     if not out:
         logger.warning("prioritize: no valid remediation items after mapping; using fallback")
-        return _fallback(raw_findings)
-    return {"findings": out, "developer_summary": summary}
+        return _fallback(raw_findings, reason="no_valid_finding_ids_from_plan", model=model)
+    return {
+        "findings": out,
+        "developer_summary": summary,
+        "analysis_meta": {
+            "path": "anthropic",
+            "reason": "ok",
+            "model": model,
+            "raw_findings": len(raw_findings),
+            "raw_plan_items": len(plan_list),
+            "mapped_findings": len(out),
+            "has_developer_summary": bool(summary and summary.strip()),
+        },
+    }
