@@ -1,12 +1,20 @@
 # VibeSec Security Report
 Repo: Preston-Miller/SBHackathon-PLEIADES
-Scanned: 2026-03-01 00:08:35 UTC
+Scanned: 2026-03-01 00:24:20 UTC
 Issues Found: 1
 
 You are an AI coding agent. Fix each issue below in order.
 Do not skip any issues. Do not ask clarifying questions.
 Use the fix instructions exactly as written.
 After fixing all issues run the verification step for each.
+
+## Triage Engine
+
+- Path: fallback
+- Reason: anthropic_request_failed
+- Model: claude-3-5-haiku-20241022
+- Raw Findings: 1
+- Mapped Findings: 1
 
 ## [SEV-001] CRITICAL -- Generic secret
 
