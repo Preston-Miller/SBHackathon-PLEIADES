@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import re
-from anthropic import Anthropic
+from openai import OpenAI
 
 SYSTEM = """You are a senior application security engineer reviewing automated scanner findings for a solo developer's project.
 
@@ -40,6 +40,11 @@ Rules: Valid JSON only. No trailing commas. No comments. Maximum 5 findings. fin
 
 logger = logging.getLogger(__name__)
 _MAPPING_PATH = os.path.join(os.path.dirname(__file__), "owasp_mapping.json")
+_DEFAULT_MODEL_CANDIDATES = [
+    "gpt-4o-mini",
+    "gpt-4.1-mini",
+    "gpt-4o",
+]
 
 
 def _load_owasp_mapping() -> dict:
@@ -95,7 +100,12 @@ def _default_enrich(f: dict, i: int) -> dict:
     return out
 
 
-def _fallback(raw_findings: list[dict], reason: str, model: str | None = None) -> dict:
+def _fallback(
+    raw_findings: list[dict],
+    reason: str,
+    model: str | None = None,
+    reason_detail: str | None = None,
+) -> dict:
     order = {"secrets": 0, "env": 1, "dependencies": 2}
     sorted_f = sorted(
         raw_findings,
@@ -108,6 +118,7 @@ def _fallback(raw_findings: list[dict], reason: str, model: str | None = None) -
         "analysis_meta": {
             "path": "fallback",
             "reason": reason,
+            "reason_detail": reason_detail,
             "model": model,
             "raw_findings": len(raw_findings),
             "mapped_findings": len(top5),
@@ -167,25 +178,46 @@ def run(raw_findings: list[dict]) -> dict:
                 "mapped_findings": 0,
             },
         }
-    key = os.environ.get("ANTHROPIC_API_KEY")
+    key = os.environ.get("OPENAI_API_KEY")
     if not key:
-        logger.warning("prioritize: ANTHROPIC_API_KEY is missing; using fallback")
+        logger.warning("prioritize: OPENAI_API_KEY is missing; using fallback")
         return _fallback(raw_findings, reason="missing_api_key", model=None)
-    model = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-haiku-20241022")
+    configured_model = os.environ.get("OPENAI_MODEL", "").strip()
+    candidates = [configured_model] if configured_model else list(_DEFAULT_MODEL_CANDIDATES)
     payload = json.dumps(raw_findings, indent=2)
     user_msg = f"Raw findings (finding_id = 0-based index):\n{payload}\n\nReturn Section 1 (Markdown developer summary), then Section 2 (single ```json code block with remediation_plan only, max 5 items)."
-    try:
-        client = Anthropic(api_key=key)
-        msg = client.messages.create(
-            model=model,
-            max_tokens=4096,
-            system=SYSTEM,
-            messages=[{"role": "user", "content": user_msg}],
+    key = key.strip().strip('"').strip("'")
+    client = OpenAI(api_key=key)
+    text = ""
+    model = None
+    last_error_detail = None
+    for candidate in candidates:
+        try:
+            msg = client.chat.completions.create(
+                model=candidate,
+                temperature=0,
+                max_tokens=4096,
+                messages=[
+                    {"role": "system", "content": SYSTEM},
+                    {"role": "user", "content": user_msg},
+                ],
+            )
+            text = (msg.choices[0].message.content or "").strip()
+            model = candidate
+            break
+        except Exception as e:
+            detail = f"{type(e).__name__}: {str(e)}".strip()
+            if len(detail) > 280:
+                detail = detail[:280] + "..."
+            last_error_detail = detail or "unknown_error"
+            logger.exception("prioritize: OpenAI request failed for model=%s: %s", candidate, e)
+    if model is None:
+        return _fallback(
+            raw_findings,
+            reason="openai_request_failed",
+            model=",".join(candidates),
+            reason_detail=last_error_detail,
         )
-        text = msg.content[0].text if msg.content else ""
-    except Exception as e:
-        logger.exception("prioritize: Anthropic request failed for model=%s: %s", model, e)
-        return _fallback(raw_findings, reason="anthropic_request_failed", model=model)
     data = _extract_json_block(text)
     if not data or "remediation_plan" not in data:
         preview = text[:600].replace("\n", "\\n")
@@ -224,7 +256,7 @@ def run(raw_findings: list[dict]) -> dict:
         "findings": out,
         "developer_summary": summary,
         "analysis_meta": {
-            "path": "anthropic",
+            "path": "openai",
             "reason": "ok",
             "model": model,
             "raw_findings": len(raw_findings),

@@ -58,6 +58,8 @@ def generate(
         lines.append("")
         lines.append(f"- Path: {analysis_meta.get('path', 'unknown')}")
         lines.append(f"- Reason: {analysis_meta.get('reason', 'unknown')}")
+        if analysis_meta.get("reason_detail"):
+            lines.append(f"- Reason Detail: {analysis_meta.get('reason_detail')}")
         if analysis_meta.get("model"):
             lines.append(f"- Model: {analysis_meta.get('model')}")
         if analysis_meta.get("raw_findings") is not None:
