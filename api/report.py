@@ -11,10 +11,30 @@ _EXT_TYPES = {
     "kt": "Kotlin", "dart": "Dart", "cs": "C#", "cpp": "C++", "c": "C",
 }
 
+_AGENT_INSTRUCTIONS = [
+    "You are an AI coding agent. Fix each issue below in order.",
+    "Do not skip any issues.",
+    "Before starting, do a quick repo review: skim the repo structure and search project-wide for related patterns.",
+    "Prefer fixing each issue directly using the instructions below. Only ask clarifying questions if information required for a safe fix is clearly missing.",
+    "Use the fix instructions exactly as written.",
+    "After fixing an issue, run its verification step before moving to the next issue.",
+]
+
 
 def _file_type(path: str) -> str:
     ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
     return _EXT_TYPES.get(ext, ext.upper() if ext else "Unknown")
+
+def _normalize_developer_summary(text: str) -> str:
+    lines = [l.rstrip() for l in (text or "").strip().splitlines()]
+    if not lines:
+        return ""
+    # Strip a redundant top-level heading like "# Developer Summary"
+    while lines and lines[0].strip().lower() in {"# developer summary", "## developer summary"}:
+        lines = lines[1:]
+        while lines and not lines[0].strip():
+            lines = lines[1:]
+    return "\n".join(lines).strip()
 
 
 def _title(f: dict) -> str:
@@ -51,6 +71,32 @@ def generate(
     if count == 0:
         lines.append("Scan passed; no issues found.")
         return "\n".join(lines)
+
+    lines.extend(_AGENT_INSTRUCTIONS)
+    lines.append("")
+
+    if isinstance(analysis_meta, dict) and analysis_meta:
+        plan_items = analysis_meta.get("raw_plan_items", analysis_meta.get("plan_items"))
+        if plan_items is None:
+            plan_items = 0
+        lines.extend(
+            [
+                "## Triage Engine",
+                "",
+                f"- Path: {analysis_meta.get('path')}",
+                f"- Reason: {analysis_meta.get('reason')}",
+                f"- Model: {analysis_meta.get('model')}",
+                f"- Raw Findings: {analysis_meta.get('raw_findings')}",
+                f"- Plan Items: {plan_items}",
+                f"- Mapped Findings: {analysis_meta.get('mapped_findings')}",
+                f"- Developer Summary Present: {bool(developer_summary and str(developer_summary).strip())}",
+                "",
+            ]
+        )
+
+    normalized_summary = _normalize_developer_summary(developer_summary or "")
+    if normalized_summary:
+        lines.extend(["## Developer Summary", "", normalized_summary, ""])
     for i, f in enumerate(prioritized_findings, 1):
         sev = _severity(f)
         title = _title(f)
@@ -89,6 +135,7 @@ def generate(
         lines.append("**Fix Steps:**")
         for j, step in enumerate(f.get("fix_steps") or [], 1):
             lines.append(f"{j}. {step}")
+        lines.append("")
         lines.append(f"**Verify:** {f.get('verify', 'Confirm fix.')}")
         lines.append("")
     return "\n".join(lines)
